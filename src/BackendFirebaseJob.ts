@@ -271,4 +271,19 @@ export class BackendFirebaseJob {
     const snapshot = await docRef.get()
     return Boolean(snapshot.exists)
   }
+
+  public static async createNew(fs: firestore.Firestore, paths: PathProvider, jobSlug: string, optionalMessage = null) {
+    const col = paths.activeJobsCollection()
+    console.log('Creating a new job on', col)
+    const docRef = await fs.collection(col).add({
+      slug: jobSlug,
+      message: optionalMessage,
+      beginAt: FieldValue.serverTimestamp(),
+    })
+    return new BackendFirebaseJob(
+      fs,
+      paths,
+      docRef.id,
+    )
+  }
 }

@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --clean --target es5",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "export GOOGLE_APPLICATION_CREDENTIALS='./.cred/firebase-admin-service-account.json' && jest"
   },
   "repository": {
     "type": "git",
@@ -16,6 +16,12 @@
     "firebase",
     "tasks"
   ],
+  "jest": {
+    "testEnvironment": "node",
+    "transform": {
+      "^.+\\.tsx?$": "ts-jest"
+    }
+  },
   "author": "Kittiphat S.",
   "license": "ISC",
   "bugs": {
@@ -28,9 +34,12 @@
   },
   "devDependencies": {
     "@swc/core": "^1.3.24",
+    "@types/jest": "^29.2.4",
     "@types/lodash": "^4.14.191",
     "firebase-admin": "^9.1.0",
+    "jest": "^29.3.1",
     "lodash": "^4.17.21",
+    "ts-jest": "^29.0.3",
     "ts-node": "^10.9.1",
     "tsup": "^6.5.0",
     "typescript": "^4.9.4"
