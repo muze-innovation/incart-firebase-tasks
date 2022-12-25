@@ -22,10 +22,13 @@
   },
   "homepage": "https://github.com/muze-innovation/incart-firebase-tasks#readme",
   "peerDependencies": {
-    "firebase-admin": "^9.1.0"
+    "firebase-admin": "^9.1.0",
+    "lodash": "^4.17"
   },
   "devDependencies": {
+    "@types/lodash": "^4.14.191",
     "firebase-admin": "^9.1.0",
+    "lodash": "^4.17.21",
     "ts-node": "^10.9.1",
     "tsup": "^6.5.0",
     "typescript": "^4.9.4"
