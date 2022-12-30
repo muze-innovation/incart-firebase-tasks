@@ -193,6 +193,8 @@ export class BackendFirebaseJob {
    * Update the status of the task. And mark it as 'deactive';
    * Also reduce the Job's activeTaskCount by 1.
    * 
+   * It will also update `failedTaskCount` and `successTaskCount` based on given deactivate's reason.
+   * 
    * @param task
    * @param reason
    * @param error
@@ -209,10 +211,12 @@ export class BackendFirebaseJob {
     if (error) {
       payload.error = error
     }
+    const aggregateKey = reason === 'failed' ? 'failedTaskCount' : 'successTaskCount'
     await this.firestore.doc(taskDocPath).update(payload)
     const updateDocPath = this.paths.activeJobsDocument(this.jobId)
     await this.firestore.doc(updateDocPath).update({
       activeTaskCount: FieldValue.increment(-1),
+      [aggregateKey]: FieldValue.increment(1),
     })
   }
 

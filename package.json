@@ -4,7 +4,7 @@
   "description": "A Task backed by Firestore to track background task progress.",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsup src/index.ts --format cjs,esm --clean --target es5",
+    "build": "tsup src/index.ts --format cjs,esm --dts --clean --target es5",
     "test": "export GOOGLE_APPLICATION_CREDENTIALS='./.cred/firebase-admin-service-account.json' && jest"
   },
   "repository": {

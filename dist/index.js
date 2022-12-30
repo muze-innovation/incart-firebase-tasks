@@ -276,11 +276,11 @@ var __toCommonJS = function(mod) {
 // src/index.ts
 var src_exports = {};
 __export(src_exports, {
-    BackendChildFirebaseTask: function() {
-        return BackendChildFirebaseTask;
-    },
     BackendFirebaseJob: function() {
         return BackendFirebaseJob;
+    },
+    BackendFirebaseTask: function() {
+        return BackendFirebaseTask;
     },
     assertValidTaskStatus: function() {
         return assertValidTaskStatus;
@@ -413,17 +413,31 @@ var helpers = {
         }, {});
     }
 };
-var BackendChildFirebaseTask = /*#__PURE__*/ function() {
-    function BackendChildFirebaseTask(firestore2, absPath, taskId) {
-        _classCallCheck(this, BackendChildFirebaseTask);
-        this.firestore = firestore2;
+var BackendFirebaseTask = /*#__PURE__*/ function() {
+    function BackendFirebaseTask(parentJob, absPath, taskId) {
+        _classCallCheck(this, BackendFirebaseTask);
+        this.parentJob = parentJob;
         this.absPath = absPath;
         this.taskId = taskId;
     }
-    _createClass(BackendChildFirebaseTask, [
+    _createClass(BackendFirebaseTask, [
         {
             key: "publishSubTask",
             value: function publishSubTask(detail) {
+                var _this = this;
+                return _asyncToGenerator(function() {
+                    return __generator(this, function(_state) {
+                        return [
+                            2,
+                            _this.publishProgress(detail)
+                        ];
+                    });
+                })();
+            }
+        },
+        {
+            key: "publishProgress",
+            value: function publishProgress(detail) {
                 var _this = this;
                 return _asyncToGenerator(function() {
                     return __generator(this, function(_state) {
@@ -431,11 +445,9 @@ var BackendChildFirebaseTask = /*#__PURE__*/ function() {
                             case 0:
                                 return [
                                     4,
-                                    _this.firestore.doc(_this.absPath).update({
-                                        message: detail.message,
-                                        author: detail.author,
+                                    _this.parentJob.firestore.doc(_this.absPath).update(_objectSpreadProps(_objectSpread({}, detail), {
                                         updatedAt: FieldValue.serverTimestamp()
-                                    })
+                                    }))
                                 ];
                             case 1:
                                 _state.sent();
@@ -446,22 +458,48 @@ var BackendChildFirebaseTask = /*#__PURE__*/ function() {
                     });
                 })();
             }
+        },
+        {
+            key: "publishSuccess",
+            value: function publishSuccess() {
+                var _this = this;
+                return _asyncToGenerator(function() {
+                    return __generator(this, function(_state) {
+                        return [
+                            2,
+                            _this.parentJob.deactivateTask(_this, "success")
+                        ];
+                    });
+                })();
+            }
+        },
+        {
+            key: "publishFailed",
+            value: function publishFailed(failureReason) {
+                var _this = this;
+                return _asyncToGenerator(function() {
+                    return __generator(this, function(_state) {
+                        return [
+                            2,
+                            _this.parentJob.deactivateTask(_this, "failed", failureReason)
+                        ];
+                    });
+                })();
+            }
         }
     ]);
-    return BackendChildFirebaseTask;
+    return BackendFirebaseTask;
 }();
 var BackendFirebaseJob = /*#__PURE__*/ function() {
-    function BackendFirebaseJob(firestore2, paths, jobId) {
+    function BackendFirebaseJob1(firestore2, paths, jobId) {
         var workloadMetaKey = arguments.length > 3 && arguments[3] !== void 0 ? arguments[3] : "workloads";
-        _classCallCheck(this, BackendFirebaseJob);
+        _classCallCheck(this, BackendFirebaseJob1);
         this.firestore = firestore2;
         this.paths = paths;
         this.jobId = jobId;
         this.workloadMetaKey = workloadMetaKey;
-        this.firestore = firestore2;
-        this.workloadMetaKey = workloadMetaKey;
     }
-    _createClass(BackendFirebaseJob, [
+    _createClass(BackendFirebaseJob1, [
         {
             key: "publishProgress",
             value: function publishProgress(detail) {
@@ -519,7 +557,7 @@ var BackendFirebaseJob = /*#__PURE__*/ function() {
         },
         {
             key: "activateTask",
-            value: function activateTask(label) {
+            value: function activateTask(label, detail) {
                 var _this = this;
                 return _asyncToGenerator(function() {
                     var docRef, o, updateDocPath;
@@ -528,16 +566,16 @@ var BackendFirebaseJob = /*#__PURE__*/ function() {
                             case 0:
                                 return [
                                     4,
-                                    _this.firestore.collection(_this.paths.activeJobSubTasksCollection(_this.jobId)).add({
+                                    _this.firestore.collection(_this.paths.activeJobSubTasksCollection(_this.jobId)).add(_objectSpreadProps(_objectSpread({}, detail || {}), {
                                         label: label,
                                         status: "active",
                                         beginAt: FieldValue.serverTimestamp(),
                                         updatedAt: FieldValue.serverTimestamp()
-                                    })
+                                    }))
                                 ];
                             case 1:
                                 docRef = _state.sent();
-                                o = new BackendChildFirebaseTask(_this.firestore, _this.paths.activeJobSubTaskDocument(_this.jobId, docRef.id), docRef.id);
+                                o = new BackendFirebaseTask(_this, _this.paths.activeJobSubTaskDocument(_this.jobId, docRef.id), docRef.id);
                                 console.log("ACTIVATE TASK", docRef.id);
                                 updateDocPath = _this.paths.activeJobsDocument(_this.jobId);
                                 _this.firestore.doc(updateDocPath).update({
@@ -557,7 +595,7 @@ var BackendFirebaseJob = /*#__PURE__*/ function() {
             value: function deactivateTask(task, reason, error) {
                 var _this = this;
                 return _asyncToGenerator(function() {
-                    var taskDocPath, payload, updateDocPath;
+                    var taskDocPath, payload, aggregateKey, updateDocPath;
                     return __generator(this, function(_state) {
                         switch(_state.label){
                             case 0:
@@ -571,6 +609,7 @@ var BackendFirebaseJob = /*#__PURE__*/ function() {
                                 if (error) {
                                     payload.error = error;
                                 }
+                                aggregateKey = reason === "failed" ? "failedTaskCount" : "successTaskCount";
                                 return [
                                     4,
                                     _this.firestore.doc(taskDocPath).update(payload)
@@ -580,9 +619,9 @@ var BackendFirebaseJob = /*#__PURE__*/ function() {
                                 updateDocPath = _this.paths.activeJobsDocument(_this.jobId);
                                 return [
                                     4,
-                                    _this.firestore.doc(updateDocPath).update({
+                                    _this.firestore.doc(updateDocPath).update(_defineProperty({
                                         activeTaskCount: FieldValue.increment(-1)
-                                    })
+                                    }, aggregateKey, FieldValue.increment(1)))
                                 ];
                             case 2:
                                 _state.sent();
@@ -770,13 +809,71 @@ var BackendFirebaseJob = /*#__PURE__*/ function() {
                 })();
             }
         }
+    ], [
+        {
+            key: "createNew",
+            value: function createNew(fs, paths, jobSlug) {
+                var optionalMessage = arguments.length > 3 && arguments[3] !== void 0 ? arguments[3] : null;
+                return _asyncToGenerator(function() {
+                    var col, docRef;
+                    return __generator(this, function(_state) {
+                        switch(_state.label){
+                            case 0:
+                                col = paths.activeJobsCollection();
+                                console.log("Creating a new job on", col);
+                                return [
+                                    4,
+                                    fs.collection(col).add({
+                                        slug: jobSlug,
+                                        message: optionalMessage,
+                                        beginAt: FieldValue.serverTimestamp()
+                                    })
+                                ];
+                            case 1:
+                                docRef = _state.sent();
+                                return [
+                                    2,
+                                    new BackendFirebaseJob(fs, paths, docRef.id)
+                                ];
+                        }
+                    });
+                })();
+            }
+        },
+        {
+            key: "loadJob",
+            value: function loadJob(fs, paths, jobId) {
+                return _asyncToGenerator(function() {
+                    var job, exists;
+                    return __generator(this, function(_state) {
+                        switch(_state.label){
+                            case 0:
+                                job = new BackendFirebaseJob(fs, paths, jobId);
+                                return [
+                                    4,
+                                    job.isExist()
+                                ];
+                            case 1:
+                                exists = _state.sent();
+                                if (!exists) {
+                                    throw new Error('"jobId" of value '.concat(jobId, " is unknown to given Firestore."));
+                                }
+                                return [
+                                    2,
+                                    job
+                                ];
+                        }
+                    });
+                })();
+            }
+        }
     ]);
-    return BackendFirebaseJob;
+    return BackendFirebaseJob1;
 }();
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
-    BackendChildFirebaseTask: BackendChildFirebaseTask,
     BackendFirebaseJob: BackendFirebaseJob,
+    BackendFirebaseTask: BackendFirebaseTask,
     assertValidTaskStatus: assertValidTaskStatus,
     helpers: helpers,
     inCartFirebaseTaskPaths: inCartFirebaseTaskPaths

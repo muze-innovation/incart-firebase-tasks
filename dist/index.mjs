@@ -81,18 +81,26 @@ var helpers = {
     }, {});
   }
 };
-var BackendChildFirebaseTask = class {
-  constructor(firestore2, absPath, taskId) {
-    this.firestore = firestore2;
+var BackendFirebaseTask = class {
+  constructor(parentJob, absPath, taskId) {
+    this.parentJob = parentJob;
     this.absPath = absPath;
     this.taskId = taskId;
   }
   async publishSubTask(detail) {
-    await this.firestore.doc(this.absPath).update({
-      message: detail.message,
-      author: detail.author,
+    return this.publishProgress(detail);
+  }
+  async publishProgress(detail) {
+    await this.parentJob.firestore.doc(this.absPath).update({
+      ...detail,
       updatedAt: FieldValue.serverTimestamp()
     });
+  }
+  async publishSuccess() {
+    return this.parentJob.deactivateTask(this, "success");
+  }
+  async publishFailed(failureReason) {
+    return this.parentJob.deactivateTask(this, "failed", failureReason);
   }
 };
 var BackendFirebaseJob = class {
@@ -100,8 +108,6 @@ var BackendFirebaseJob = class {
     this.firestore = firestore2;
     this.paths = paths;
     this.jobId = jobId;
-    this.workloadMetaKey = workloadMetaKey;
-    this.firestore = firestore2;
     this.workloadMetaKey = workloadMetaKey;
   }
   async publishProgress(detail, workloads = {}) {
@@ -135,15 +141,16 @@ var BackendFirebaseJob = class {
       });
     }
   }
-  async activateTask(label) {
+  async activateTask(label, detail) {
     const docRef = await this.firestore.collection(this.paths.activeJobSubTasksCollection(this.jobId)).add({
+      ...detail || {},
       label,
       status: "active",
       beginAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp()
     });
-    const o = new BackendChildFirebaseTask(
-      this.firestore,
+    const o = new BackendFirebaseTask(
+      this,
       this.paths.activeJobSubTaskDocument(this.jobId, docRef.id),
       docRef.id
     );
@@ -165,10 +172,12 @@ var BackendFirebaseJob = class {
     if (error) {
       payload.error = error;
     }
+    const aggregateKey = reason === "failed" ? "failedTaskCount" : "successTaskCount";
     await this.firestore.doc(taskDocPath).update(payload);
     const updateDocPath = this.paths.activeJobsDocument(this.jobId);
     await this.firestore.doc(updateDocPath).update({
-      activeTaskCount: FieldValue.increment(-1)
+      activeTaskCount: FieldValue.increment(-1),
+      [aggregateKey]: FieldValue.increment(1)
     });
   }
   async getActiveTasksCount() {
@@ -222,10 +231,36 @@ var BackendFirebaseJob = class {
     const snapshot = await docRef.get();
     return Boolean(snapshot.exists);
   }
+  static async createNew(fs, paths, jobSlug, optionalMessage = null) {
+    const col = paths.activeJobsCollection();
+    console.log("Creating a new job on", col);
+    const docRef = await fs.collection(col).add({
+      slug: jobSlug,
+      message: optionalMessage,
+      beginAt: FieldValue.serverTimestamp()
+    });
+    return new BackendFirebaseJob(
+      fs,
+      paths,
+      docRef.id
+    );
+  }
+  static async loadJob(fs, paths, jobId) {
+    const job = new BackendFirebaseJob(
+      fs,
+      paths,
+      jobId
+    );
+    const exists = await job.isExist();
+    if (!exists) {
+      throw new Error(`"jobId" of value ${jobId} is unknown to given Firestore.`);
+    }
+    return job;
+  }
 };
 export {
-  BackendChildFirebaseTask,
   BackendFirebaseJob,
+  BackendFirebaseTask,
   assertValidTaskStatus,
   helpers,
   inCartFirebaseTaskPaths
