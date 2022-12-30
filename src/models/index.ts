@@ -59,7 +59,10 @@ export const assertValidTaskStatus = (status: string): status is TaskStatus => {
   throw new Error(`Invalid "status" value of ${status}. Expected ${[...Object.values(TASK_STATUSES)].join(', ')}`)
 }
 
-export interface PublishSubTaskRequest {
+/**
+ * Base content of FirebaseTask
+ */
+export interface FirebaseTaskContent {
   message: string
   author: string
 }

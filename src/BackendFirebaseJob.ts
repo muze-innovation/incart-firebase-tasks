@@ -1,4 +1,4 @@
-import { ProgressDetail, ProgressWorkload, CancelRequest, DoneRequest, TaskStatus, assertValidTaskStatus, Workload, PublishSubTaskRequest } from "./models"
+import { ProgressDetail, ProgressWorkload, CancelRequest, DoneRequest, TaskStatus, assertValidTaskStatus, Workload, FirebaseTaskContent } from "./models"
 import { firestore } from "firebase-admin"
 import { PathProvider } from "./paths"
 import isEmpty from 'lodash/isEmpty'
@@ -58,28 +58,53 @@ export const helpers = {
   },
 }
 
-export class BackendChildFirebaseTask {
+export class BackendFirebaseTask<T extends FirebaseTaskContent> {
   /**
    * @param firestore
    * @param absPath
    * @param taskId
    */
   constructor(
-    protected firestore: firestore.Firestore,
+    protected parentJob: BackendFirebaseJob,
     protected absPath: string,
     public readonly taskId: string) {
   }
 
   /**
+   * !Deprecated, in favor of `publishProgress`
+   * 
    * @param detail
-   * @returns
    */
-  async publishSubTask(detail: PublishSubTaskRequest): Promise<void> {
-    await this.firestore.doc(this.absPath).update({
-      message: detail.message,
-      author: detail.author,
+  async publishSubTask(detail: T): Promise<void> {
+    return this.publishProgress(detail)
+  }
+
+  /**
+   * 
+   * update task details. Keep calling this API until your ChildFirebaseTask is finished.
+   */
+  public async publishProgress(detail: T): Promise<void> {
+    // Update the internal documents.
+    await this.parentJob.firestore.doc(this.absPath).update({
+      ...detail,
       updatedAt: FieldValue.serverTimestamp(),
     })
+  }
+
+  /**
+   * terminate itself as 'success'
+   */
+  async publishSuccess(): Promise<void> {
+    return this.parentJob.deactivateTask(this, 'success')
+  }
+
+  /**
+   * terminate itself as 'failed' with specific reason.
+   * 
+   * @param failureReason
+   */
+  async publishFailed(failureReason: string): Promise<void> {
+    return this.parentJob.deactivateTask(this, 'failed', failureReason)
   }
 }
 
@@ -94,12 +119,10 @@ export class BackendFirebaseJob {
    * @param workloadMetaKey
    */
   constructor(
-    protected firestore: firestore.Firestore,
-    protected paths: PathProvider,
-    protected jobId: string,
-    protected workloadMetaKey = 'workloads') {
-    this.firestore = firestore
-    this.workloadMetaKey = workloadMetaKey
+    public readonly firestore: firestore.Firestore,
+    public readonly paths: PathProvider,
+    public readonly jobId: string,
+    public readonly workloadMetaKey = 'workloads') {
   }
 
   /**
@@ -137,21 +160,24 @@ export class BackendFirebaseJob {
   }
 
   /**
-   * Active children job
-   * @param label
+   * Active Job's child task.
+   *
+   * @param label readable task description
+   * @param detail detail of the tasks.
    * @returns
    */
-  async activateTask(label: string): Promise<BackendChildFirebaseTask> {
+  async activateTask<T extends FirebaseTaskContent>(label: string, detail: T | null): Promise<BackendFirebaseTask<T>> {
     const docRef = await this.firestore
       .collection(this.paths.activeJobSubTasksCollection(this.jobId))
       .add({
+        ...(detail || {}),
         label,
         status: 'active',
         beginAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       })
-    const o = new BackendChildFirebaseTask(
-      this.firestore,
+    const o = new BackendFirebaseTask<T>(
+      this,
       this.paths.activeJobSubTaskDocument(this.jobId, docRef.id),
       docRef.id,
     )
@@ -164,12 +190,15 @@ export class BackendFirebaseJob {
   }
 
   /**
+   * Update the status of the task. And mark it as 'deactive';
+   * Also reduce the Job's activeTaskCount by 1.
+   * 
    * @param task
    * @param reason
    * @param error
    * @returns
    */
-  async deactivateTask(task: BackendChildFirebaseTask, reason: 'failed' | 'success', error?: string) {
+  async deactivateTask(task: BackendFirebaseTask<any>, reason: 'failed' | 'success', error?: string) {
     console.log('DEACTIVATE TASK', task.taskId, reason, error)
     const taskDocPath = this.paths.activeJobSubTaskDocument(this.jobId, task.taskId)
     const payload: any = {
@@ -189,6 +218,7 @@ export class BackendFirebaseJob {
 
   /**
    * Query number of active tasks at the given moment
+   * 
    * @returns
    */
   async getActiveTasksCount(): Promise<number> {
@@ -251,6 +281,7 @@ export class BackendFirebaseJob {
 
   /**
    * Check if job has been cancelled?
+   * 
    * @returns
    */
   async isJobCancelled(): Promise<boolean> {
@@ -263,6 +294,7 @@ export class BackendFirebaseJob {
 
   /**
    * Check if job exists?
+   * 
    * @returns
    */
   async isExist(): Promise<boolean> {
@@ -272,7 +304,7 @@ export class BackendFirebaseJob {
     return Boolean(snapshot.exists)
   }
 
-  public static async createNew(fs: firestore.Firestore, paths: PathProvider, jobSlug: string, optionalMessage = null) {
+  public static async createNew(fs: firestore.Firestore, paths: PathProvider, jobSlug: string, optionalMessage = null): Promise<BackendFirebaseJob> {
     const col = paths.activeJobsCollection()
     console.log('Creating a new job on', col)
     const docRef = await fs.collection(col).add({
@@ -285,5 +317,24 @@ export class BackendFirebaseJob {
       paths,
       docRef.id,
     )
+  }
+
+  /**
+   * Create Firebase Job Instasnce from existing JobId on specific store (if specified.)
+   * 
+   * @param jobId specific firebase jobId
+   * @throws InvalidJobId error when given jobId is not exists.
+   */
+  public static async loadJob(fs: firestore.Firestore, paths:PathProvider, jobId: string): Promise<BackendFirebaseJob> {
+    const job = new BackendFirebaseJob(
+      fs,
+      paths,
+      jobId,
+    )
+    const exists = await job.isExist()
+    if (!exists) {
+      throw new Error(`"jobId" of value ${jobId} is unknown to given Firestore.`)
+    } 
+    return job
   }
 }
