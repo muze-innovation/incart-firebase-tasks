@@ -3,6 +3,7 @@ import { firestore } from "firebase-admin"
 import { PathProvider } from "./paths"
 import isEmpty from 'lodash/isEmpty'
 import reduce from 'lodash/reduce'
+import { ProgressDetailPublisher } from "./ProgressDetailPublisher"
 
 // Shortcuts
 const FieldValue = firestore.FieldValue
@@ -109,6 +110,9 @@ export class BackendFirebaseTask<T extends FirebaseTaskContent> {
 }
 
 export class BackendFirebaseJob {
+  // Default options
+  public readonly options: { workloadMetaKey: string, useSubTaskProgress: boolean }
+
   /**
    * Create a brand new Backend Firebase Job object
    *
@@ -116,16 +120,59 @@ export class BackendFirebaseJob {
    * @param pathProvider
    * @param storeId
    * @param jobId
-   * @param workloadMetaKey
+   * @param options - customize Job's behavior
    */
   constructor(
     public readonly firestore: firestore.Firestore,
     public readonly paths: PathProvider,
     public readonly jobId: string,
-    public readonly workloadMetaKey = 'workloads') {
+    options: { workloadMetaKey?: string, useSubTaskProgress?: boolean } = {}) {
+    this.options = {
+      workloadMetaKey: options.workloadMetaKey || 'workloads',
+      useSubTaskProgress: options.useSubTaskProgress || false,
+    }
   }
 
   /**
+   * New API to report progress.
+   * 
+   * Usage
+   * 
+   * ```ts
+   * await job.makeProgress()
+   *  .setStatus('in-progress')
+   *  .setManualProgress(30, 100)
+   *  .setMessage('all good')
+   *  .publish()
+   * ```
+   * 
+   * @returns a progress maker
+   */
+  public makeProgress(): ProgressDetailPublisher {
+    const updateDocPath = this.paths.activeJobsDocument(this.jobId)
+    const docRef = this.firestore.doc(updateDocPath)
+    return new ProgressDetailPublisher(async (jobPayload, workloads) => {
+      await docRef.update(jobPayload)
+      const computedWorkloadChanges = helpers.toFirestoreWorkloads(workloads)
+      if (!isEmpty(computedWorkloadChanges)) {
+        const workloadsPath = this.paths.activeJobsMetaDocument(this.jobId, this.options.workloadMetaKey)
+        console.log('Updating job.workloads on', workloadsPath, computedWorkloadChanges)
+        await this.firestore.doc(workloadsPath).set({
+          ...computedWorkloadChanges,
+          updatedAt: FieldValue.serverTimestamp(),
+        }, {
+          merge: true,
+        })
+      }
+    })
+  }
+
+  /**
+   * !Backward compat API
+   * 
+   * Update the progress report manually.
+   * If `options.useSubTaskProgress` is true, the system will discard currentProgress and totalProgress information.
+   * 
    * @param detail
    * @param workloads update information about workloads.
    * @returns
@@ -136,27 +183,12 @@ export class BackendFirebaseJob {
     } = detail
     const jobId = this.jobId
     assertValidTaskStatus(status)
-    const updateDocPath = this.paths.activeJobsDocument(jobId)
-    console.log('Updating job on', updateDocPath)
-    await this.firestore.doc(updateDocPath).update({
-      jobId,
-      status,
-      currentProgress,
-      totalProgress,
-      message,
-      updatedAt: FieldValue.serverTimestamp(),
-    })
-    const computedWorkloadChanges = helpers.toFirestoreWorkloads(workloads)
-    if (!isEmpty(computedWorkloadChanges)) {
-      const workloadsPath = this.paths.activeJobsMetaDocument(jobId, this.workloadMetaKey)
-      console.log('Updating job.workloads on', workloadsPath, computedWorkloadChanges)
-      await this.firestore.doc(workloadsPath).set({
-        ...computedWorkloadChanges,
-        updatedAt: FieldValue.serverTimestamp(),
-      }, {
-        merge: true,
-      })
-    }
+    return this.makeProgress()
+      .setManualProgress(currentProgress, totalProgress)
+      .setStatus(status)
+      .setMessage(message)
+      .withWorkload(workloads)
+      .publish()
   }
 
   /**
@@ -240,7 +272,7 @@ export class BackendFirebaseJob {
    */
   async getWorkloads(): Promise<Record<string, string[]> | null> {
     const jobId = this.jobId
-    const docPath = this.paths.activeJobsMetaDocument(jobId, this.workloadMetaKey)
+    const docPath = this.paths.activeJobsMetaDocument(jobId, this.options.workloadMetaKey)
     const doc = await this.firestore.doc(docPath).get()
     if (!doc.exists) {
       return null
