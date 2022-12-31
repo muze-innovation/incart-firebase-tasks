@@ -3,6 +3,7 @@ import { ProgressWorkload } from "./models"
 
 export class ProgressDetailPublisher {
 
+  // For Progress only
   public jobPayload: Partial<{
     status: 'in-progress' | 'initializing'
     message: string
@@ -12,6 +13,10 @@ export class ProgressDetailPublisher {
 
   protected workloads: ProgressWorkload = {}
 
+  /**
+   * Create an instance of ProgressDetailPublisher which uses Builder pattern.
+   * @param publishHandler 
+   */
   constructor(
     protected readonly publishHandler: (jobPayload: any, workloads: ProgressWorkload) => Promise<any>,
   ) {
