@@ -1,14 +1,34 @@
 import { firestore } from "firebase-admin"
 import { ProgressWorkload } from "./models"
 
+/**
+ * ProgressDetailPublisher will manage these values
+ * 
+ * ```
+ * |------------------------------------------------------------>| total progress
+ * |---------------------------->| current progress
+ *                               |--->| inFlight progress
+ * ```
+ */
+
 export class ProgressDetailPublisher {
 
   // For Progress only
   public jobPayload: Partial<{
     status: 'in-progress' | 'initializing'
     message: string
+    /**
+     * Total Bar Length
+     */
     totalProgress: number
+    /**
+     * Finished Bar Length
+     */
     currentProgress: number
+    /**
+     * Almost Finished Bar Length
+     */
+    inFlightProgress: number
   }> = {}
 
   protected workloads: ProgressWorkload = {}
@@ -37,9 +57,15 @@ export class ProgressDetailPublisher {
     return this
   }
 
-  public setManualProgress(current: number, total: number): this {
+  public setManualProgress(current: number, total: number, inFlight: number): this {
     this.jobPayload.totalProgress = total
     this.jobPayload.currentProgress = current
+    this.jobPayload.inFlightProgress = inFlight
+    return this
+  }
+
+  public setInFlightProgress(inFlight: number): this {
+    this.jobPayload.inFlightProgress = inFlight
     return this
   }
 

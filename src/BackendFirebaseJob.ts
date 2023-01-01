@@ -3,6 +3,7 @@ import { firestore } from "firebase-admin"
 import { PathProvider } from "./paths"
 import isEmpty from 'lodash/isEmpty'
 import reduce from 'lodash/reduce'
+import chunk from 'lodash/chunk'
 import { ProgressDetailPublisher } from "./ProgressDetailPublisher"
 
 // Shortcuts
@@ -184,11 +185,82 @@ export class BackendFirebaseJob {
     const jobId = this.jobId
     assertValidTaskStatus(status)
     return this.makeProgress()
-      .setManualProgress(currentProgress, totalProgress)
+      .setManualProgress(currentProgress, totalProgress, 0)
       .setStatus(status)
       .setMessage(message)
       .withWorkload(workloads)
       .publish()
+  }
+
+  /**
+   * Use this method to create the BackendFirebaseTask with specific taskId. This assumes that you have activate the task with
+   * either: `activateTaskBatch` or `activateTask` method.
+   * 
+   * @param taskId 
+   * @returns 
+   */
+  public getActiveTask<T extends FirebaseTaskContent>(taskId: string): BackendFirebaseTask<T> {
+    const o = new BackendFirebaseTask<T>(
+      this,
+      this.paths.activeJobSubTaskDocument(this.jobId, taskId),
+      taskId,
+    )
+    return o
+  }
+
+  /**
+   * Same as activeTaskBatch but will save writeOperation charged with batch operations.
+   * 
+   * @param items 
+   * @param chunkSize 
+   * @returns 
+   */
+  async activateTaskBatch<T extends FirebaseTaskContent>(items: { label: string, detail: T | null }[], chunkSize: number = 200): Promise<BackendFirebaseTask<T>[]> {
+    // Sanity check, Firebase's document only allow maximum of 500 operations, -1 is for activeTaskCount reduction.
+    if (chunkSize > (500 - 1)) {
+      throw new Error('Maximum batch operation exceeds.')
+    }
+    const batchOp = this.firestore.batch()
+    const col = this.firestore
+      .collection(this.paths.activeJobSubTasksCollection(this.jobId))
+    const activeJobDocRef = this.firestore
+      .doc(this.paths.activeJobsDocument(this.jobId))
+    const result: BackendFirebaseTask<T>[] = []
+
+    const chunked = chunk(items, 100)
+    for(const batchOfItems of chunked) {
+      // For each chunk
+      const batchSize = batchOfItems.length
+      const resultOp: firestore.DocumentReference<firestore.DocumentData>[] = new Array(batchSize)
+      // (1) create new document
+      for(let i=0;i<batchSize;i++) {
+        const item = batchOfItems[i]
+        const docRef = col.doc()
+        batchOp.set(docRef, {
+          ...(item.detail),
+          label: item.label,
+          status: 'active',
+          beginAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        })
+        resultOp[i] = docRef
+      }
+      // (2) update activeTaskCount
+      batchOp.update(activeJobDocRef, {
+        activeTaskCount: FieldValue.increment(batchSize),
+      })
+      await batchOp.commit()
+      for (let i=0;i<batchSize;i++) {
+        const docRef = resultOp[i]
+        const o = new BackendFirebaseTask<T>(
+          this,
+          this.paths.activeJobSubTaskDocument(this.jobId, docRef.id),
+          docRef.id,
+        )
+        result.push(o)
+      }
+    }
+    return result
   }
 
   /**
