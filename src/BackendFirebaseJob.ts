@@ -215,7 +215,7 @@ export class BackendFirebaseJob {
    * @param chunkSize 
    * @returns 
    */
-  async activateTaskBatch<T extends FirebaseTaskContent>(items: { label: string, detail: T | null }[], chunkSize: number = 200): Promise<BackendFirebaseTask<T>[]> {
+  async activateTaskBatch<T extends FirebaseTaskContent>(items: { label: string, detail: T | null, taskId?: string }[], chunkSize: number = 200): Promise<BackendFirebaseTask<T>[]> {
     // Sanity check, Firebase's document only allow maximum of 500 operations, -1 is for activeTaskCount reduction.
     if (chunkSize > (500 - 1)) {
       throw new Error('Maximum batch operation exceeds.')
@@ -235,7 +235,7 @@ export class BackendFirebaseJob {
       // (1) create new document
       for(let i=0;i<batchSize;i++) {
         const item = batchOfItems[i]
-        const docRef = col.doc()
+        const docRef = item.taskId ? col.doc(item.taskId) : col.doc()
         batchOp.set(docRef, {
           ...(item.detail),
           label: item.label,
@@ -268,12 +268,15 @@ export class BackendFirebaseJob {
    *
    * @param label readable task description
    * @param detail detail of the tasks.
+   * @param taskId manually specific taskId instead of using `col.doc()`
    * @returns
    */
-  async activateTask<T extends FirebaseTaskContent>(label: string, detail: T | null): Promise<BackendFirebaseTask<T>> {
-    const docRef = await this.firestore
+  async activateTask<T extends FirebaseTaskContent>(label: string, detail: T | null, taskId?: string): Promise<BackendFirebaseTask<T>> {
+    const col = this.firestore
       .collection(this.paths.activeJobSubTasksCollection(this.jobId))
-      .add({
+
+    const docRef = taskId ? col.doc(taskId) : col.doc()
+    await docRef.set({
         ...(detail || {}),
         label,
         status: 'active',

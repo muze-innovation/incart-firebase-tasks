@@ -102,6 +102,7 @@ describe('Samples', () => {
       const tasks = await job.activateTaskBatch(oneToN.map((n) => ({
         label: `my-child-task-label-batch-${n}`,
         detail: null,
+        taskId: `my-child-task-label-batch-${n}-id`,
       })))
 
       const messageConsumers = tasks.map(async (task) => {

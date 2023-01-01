@@ -134,13 +134,13 @@ var __generator = this && this.__generator || function(thisArg, body) {
         trys: [],
         ops: []
     };
-    return g = {
+    return(g = {
         next: verb(0),
         "throw": verb(1),
         "return": verb(2)
     }, typeof Symbol === "function" && (g[Symbol.iterator] = function() {
         return this;
-    }), g;
+    }), g);
     function verb(n) {
         return function(v) {
             return step([
@@ -381,10 +381,94 @@ var assertValidTaskStatus = function(status) {
     throw new Error('Invalid "status" value of '.concat(status, ". Expected ").concat(_toConsumableArray(Object.values(TASK_STATUSES)).join(", ")));
 };
 // src/BackendFirebaseJob.ts
-var import_firebase_admin = require("firebase-admin");
+var import_firebase_admin2 = require("firebase-admin");
 var import_isEmpty = __toESM(require("lodash/isEmpty"));
 var import_reduce = __toESM(require("lodash/reduce"));
-var FieldValue = import_firebase_admin.firestore.FieldValue;
+var import_chunk = __toESM(require("lodash/chunk"));
+// src/ProgressDetailPublisher.ts
+var import_firebase_admin = require("firebase-admin");
+var ProgressDetailPublisher = /*#__PURE__*/ function() {
+    function ProgressDetailPublisher(publishHandler) {
+        _classCallCheck(this, ProgressDetailPublisher);
+        this.publishHandler = publishHandler;
+        this.jobPayload = {};
+        this.workloads = {};
+    }
+    _createClass(ProgressDetailPublisher, [
+        {
+            key: "setStatus",
+            value: function setStatus(status) {
+                this.jobPayload.status = status;
+                return this;
+            }
+        },
+        {
+            key: "setMessage",
+            value: function setMessage(message) {
+                this.jobPayload.message = message;
+                return this;
+            }
+        },
+        {
+            key: "withWorkload",
+            value: function withWorkload(workloads) {
+                this.workloads = workloads;
+                return this;
+            }
+        },
+        {
+            key: "setManualProgress",
+            value: function setManualProgress(current, total, inFlight) {
+                this.jobPayload.totalProgress = total;
+                this.jobPayload.currentProgress = current;
+                this.jobPayload.inFlightProgress = inFlight;
+                return this;
+            }
+        },
+        {
+            key: "setInFlightProgress",
+            value: function setInFlightProgress(inFlight) {
+                this.jobPayload.inFlightProgress = inFlight;
+                return this;
+            }
+        },
+        {
+            key: "setTotalProgress",
+            value: function setTotalProgress(total) {
+                this.jobPayload.totalProgress = total;
+                return this;
+            }
+        },
+        {
+            key: "setCurrentProgress",
+            value: function setCurrentProgress(current) {
+                this.jobPayload.currentProgress = current;
+                return this;
+            }
+        },
+        {
+            key: "publish",
+            value: function publish() {
+                var _this = this;
+                return _asyncToGenerator(function() {
+                    var jobPayload;
+                    return __generator(this, function(_state) {
+                        jobPayload = _objectSpreadProps(_objectSpread({}, _this.jobPayload), {
+                            updatedAt: import_firebase_admin.firestore.FieldValue.serverTimestamp()
+                        });
+                        return [
+                            2,
+                            _this.publishHandler(jobPayload, _this.workloads)
+                        ];
+                    });
+                })();
+            }
+        }
+    ]);
+    return ProgressDetailPublisher;
+}();
+// src/BackendFirebaseJob.ts
+var FieldValue = import_firebase_admin2.firestore.FieldValue;
 var helpers = {
     toFirestoreWorkload: function toFirestoreWorkload(workload, workloadKey) {
         if ((0, import_isEmpty.default)(workload)) {
@@ -491,64 +575,192 @@ var BackendFirebaseTask = /*#__PURE__*/ function() {
     return BackendFirebaseTask;
 }();
 var BackendFirebaseJob = /*#__PURE__*/ function() {
-    function BackendFirebaseJob1(firestore2, paths, jobId) {
-        var workloadMetaKey = arguments.length > 3 && arguments[3] !== void 0 ? arguments[3] : "workloads";
+    function BackendFirebaseJob1(firestore3, paths, jobId) {
+        var options = arguments.length > 3 && arguments[3] !== void 0 ? arguments[3] : {};
         _classCallCheck(this, BackendFirebaseJob1);
-        this.firestore = firestore2;
+        this.firestore = firestore3;
         this.paths = paths;
         this.jobId = jobId;
-        this.workloadMetaKey = workloadMetaKey;
+        this.options = {
+            workloadMetaKey: options.workloadMetaKey || "workloads",
+            useSubTaskProgress: options.useSubTaskProgress || false
+        };
     }
     _createClass(BackendFirebaseJob1, [
+        {
+            key: "makeProgress",
+            value: function makeProgress() {
+                var updateDocPath = this.paths.activeJobsDocument(this.jobId);
+                var docRef = this.firestore.doc(updateDocPath);
+                var _this = this;
+                return new ProgressDetailPublisher(function() {
+                    var _ref = _asyncToGenerator(function(jobPayload, workloads) {
+                        var computedWorkloadChanges, workloadsPath;
+                        return __generator(this, function(_state) {
+                            switch(_state.label){
+                                case 0:
+                                    return [
+                                        4,
+                                        docRef.update(jobPayload)
+                                    ];
+                                case 1:
+                                    _state.sent();
+                                    computedWorkloadChanges = helpers.toFirestoreWorkloads(workloads);
+                                    if (!!(0, import_isEmpty.default)(computedWorkloadChanges)) return [
+                                        3,
+                                        3
+                                    ];
+                                    workloadsPath = _this.paths.activeJobsMetaDocument(_this.jobId, _this.options.workloadMetaKey);
+                                    console.log("Updating job.workloads on", workloadsPath, computedWorkloadChanges);
+                                    return [
+                                        4,
+                                        _this.firestore.doc(workloadsPath).set(_objectSpreadProps(_objectSpread({}, computedWorkloadChanges), {
+                                            updatedAt: FieldValue.serverTimestamp()
+                                        }), {
+                                            merge: true
+                                        })
+                                    ];
+                                case 2:
+                                    _state.sent();
+                                    _state.label = 3;
+                                case 3:
+                                    return [
+                                        2
+                                    ];
+                            }
+                        });
+                    });
+                    return function(jobPayload, workloads) {
+                        return _ref.apply(this, arguments);
+                    };
+                }());
+            }
+        },
         {
             key: "publishProgress",
             value: function publishProgress(detail) {
                 var workloads = arguments.length > 1 && arguments[1] !== void 0 ? arguments[1] : {};
                 var _this = this;
                 return _asyncToGenerator(function() {
-                    var status, _detail_currentProgress, currentProgress, _detail_totalProgress, totalProgress, _detail_message, message, jobId, updateDocPath, computedWorkloadChanges, workloadsPath;
+                    var status, _detail_currentProgress, currentProgress, _detail_totalProgress, totalProgress, _detail_message, message, jobId;
+                    return __generator(this, function(_state) {
+                        status = detail.status, _detail_currentProgress = detail.currentProgress, currentProgress = _detail_currentProgress === void 0 ? 0 : _detail_currentProgress, _detail_totalProgress = detail.totalProgress, totalProgress = _detail_totalProgress === void 0 ? 100 : _detail_totalProgress, _detail_message = detail.message, message = _detail_message === void 0 ? "" : _detail_message;
+                        jobId = _this.jobId;
+                        assertValidTaskStatus(status);
+                        return [
+                            2,
+                            _this.makeProgress().setManualProgress(currentProgress, totalProgress, 0).setStatus(status).setMessage(message).withWorkload(workloads).publish()
+                        ];
+                    });
+                })();
+            }
+        },
+        {
+            key: "getActiveTask",
+            value: function getActiveTask(taskId) {
+                var o = new BackendFirebaseTask(this, this.paths.activeJobSubTaskDocument(this.jobId, taskId), taskId);
+                return o;
+            }
+        },
+        {
+            key: "activateTaskBatch",
+            value: function activateTaskBatch(items) {
+                var chunkSize = arguments.length > 1 && arguments[1] !== void 0 ? arguments[1] : 200;
+                var _this = this;
+                return _asyncToGenerator(function() {
+                    var batchOp, col, activeJobDocRef, result, chunked, _iteratorNormalCompletion, _didIteratorError, _iteratorError, _iterator, _step, batchOfItems, batchSize, resultOp, i, item, docRef, i1, docRef1, o, err;
                     return __generator(this, function(_state) {
                         switch(_state.label){
                             case 0:
-                                status = detail.status, _detail_currentProgress = detail.currentProgress, currentProgress = _detail_currentProgress === void 0 ? 0 : _detail_currentProgress, _detail_totalProgress = detail.totalProgress, totalProgress = _detail_totalProgress === void 0 ? 100 : _detail_totalProgress, _detail_message = detail.message, message = _detail_message === void 0 ? "" : _detail_message;
-                                jobId = _this.jobId;
-                                assertValidTaskStatus(status);
-                                updateDocPath = _this.paths.activeJobsDocument(jobId);
-                                console.log("Updating job on", updateDocPath);
-                                return [
-                                    4,
-                                    _this.firestore.doc(updateDocPath).update({
-                                        jobId: jobId,
-                                        status: status,
-                                        currentProgress: currentProgress,
-                                        totalProgress: totalProgress,
-                                        message: message,
-                                        updatedAt: FieldValue.serverTimestamp()
-                                    })
-                                ];
+                                if (chunkSize > 500 - 1) {
+                                    throw new Error("Maximum batch operation exceeds.");
+                                }
+                                batchOp = _this.firestore.batch();
+                                col = _this.firestore.collection(_this.paths.activeJobSubTasksCollection(_this.jobId));
+                                activeJobDocRef = _this.firestore.doc(_this.paths.activeJobsDocument(_this.jobId));
+                                result = [];
+                                chunked = (0, import_chunk.default)(items, 100);
+                                _iteratorNormalCompletion = true, _didIteratorError = false, _iteratorError = undefined;
+                                _state.label = 1;
                             case 1:
-                                _state.sent();
-                                computedWorkloadChanges = helpers.toFirestoreWorkloads(workloads);
-                                if (!!(0, import_isEmpty.default)(computedWorkloadChanges)) return [
+                                _state.trys.push([
+                                    1,
+                                    6,
+                                    7,
+                                    8
+                                ]);
+                                _iterator = chunked[Symbol.iterator]();
+                                _state.label = 2;
+                            case 2:
+                                if (!!(_iteratorNormalCompletion = (_step = _iterator.next()).done)) return [
                                     3,
-                                    3
+                                    5
                                 ];
-                                workloadsPath = _this.paths.activeJobsMetaDocument(jobId, _this.workloadMetaKey);
-                                console.log("Updating job.workloads on", workloadsPath, computedWorkloadChanges);
+                                batchOfItems = _step.value;
+                                batchSize = batchOfItems.length;
+                                resultOp = new Array(batchSize);
+                                for(i = 0; i < batchSize; i++){
+                                    item = batchOfItems[i];
+                                    docRef = item.taskId ? col.doc(item.taskId) : col.doc();
+                                    batchOp.set(docRef, _objectSpreadProps(_objectSpread({}, item.detail), {
+                                        label: item.label,
+                                        status: "active",
+                                        beginAt: FieldValue.serverTimestamp(),
+                                        updatedAt: FieldValue.serverTimestamp()
+                                    }));
+                                    resultOp[i] = docRef;
+                                }
+                                batchOp.update(activeJobDocRef, {
+                                    activeTaskCount: FieldValue.increment(batchSize)
+                                });
                                 return [
                                     4,
-                                    _this.firestore.doc(workloadsPath).set(_objectSpreadProps(_objectSpread({}, computedWorkloadChanges), {
-                                        updatedAt: FieldValue.serverTimestamp()
-                                    }), {
-                                        merge: true
-                                    })
+                                    batchOp.commit()
                                 ];
-                            case 2:
-                                _state.sent();
-                                _state.label = 3;
                             case 3:
+                                _state.sent();
+                                for(i1 = 0; i1 < batchSize; i1++){
+                                    docRef1 = resultOp[i1];
+                                    o = new BackendFirebaseTask(_this, _this.paths.activeJobSubTaskDocument(_this.jobId, docRef1.id), docRef1.id);
+                                    result.push(o);
+                                }
+                                _state.label = 4;
+                            case 4:
+                                _iteratorNormalCompletion = true;
                                 return [
+                                    3,
                                     2
+                                ];
+                            case 5:
+                                return [
+                                    3,
+                                    8
+                                ];
+                            case 6:
+                                err = _state.sent();
+                                _didIteratorError = true;
+                                _iteratorError = err;
+                                return [
+                                    3,
+                                    8
+                                ];
+                            case 7:
+                                try {
+                                    if (!_iteratorNormalCompletion && _iterator.return != null) {
+                                        _iterator.return();
+                                    }
+                                } finally{
+                                    if (_didIteratorError) {
+                                        throw _iteratorError;
+                                    }
+                                }
+                                return [
+                                    7
+                                ];
+                            case 8:
+                                return [
+                                    2,
+                                    result
                                 ];
                         }
                     });
@@ -557,16 +769,18 @@ var BackendFirebaseJob = /*#__PURE__*/ function() {
         },
         {
             key: "activateTask",
-            value: function activateTask(label, detail) {
+            value: function activateTask(label, detail, taskId) {
                 var _this = this;
                 return _asyncToGenerator(function() {
-                    var docRef, o, updateDocPath;
+                    var col, docRef, o, updateDocPath;
                     return __generator(this, function(_state) {
                         switch(_state.label){
                             case 0:
+                                col = _this.firestore.collection(_this.paths.activeJobSubTasksCollection(_this.jobId));
+                                docRef = taskId ? col.doc(taskId) : col.doc();
                                 return [
                                     4,
-                                    _this.firestore.collection(_this.paths.activeJobSubTasksCollection(_this.jobId)).add(_objectSpreadProps(_objectSpread({}, detail || {}), {
+                                    docRef.set(_objectSpreadProps(_objectSpread({}, detail || {}), {
                                         label: label,
                                         status: "active",
                                         beginAt: FieldValue.serverTimestamp(),
@@ -574,7 +788,7 @@ var BackendFirebaseJob = /*#__PURE__*/ function() {
                                     }))
                                 ];
                             case 1:
-                                docRef = _state.sent();
+                                _state.sent();
                                 o = new BackendFirebaseTask(_this, _this.paths.activeJobSubTaskDocument(_this.jobId, docRef.id), docRef.id);
                                 console.log("ACTIVATE TASK", docRef.id);
                                 updateDocPath = _this.paths.activeJobsDocument(_this.jobId);
@@ -670,7 +884,7 @@ var BackendFirebaseJob = /*#__PURE__*/ function() {
                         switch(_state.label){
                             case 0:
                                 jobId = _this.jobId;
-                                docPath = _this.paths.activeJobsMetaDocument(jobId, _this.workloadMetaKey);
+                                docPath = _this.paths.activeJobsMetaDocument(jobId, _this.options.workloadMetaKey);
                                 return [
                                     4,
                                     _this.firestore.doc(docPath).get()

@@ -74,6 +74,49 @@ interface FirebaseTaskContent {
     author: string;
 }
 
+/**
+ * ProgressDetailPublisher will manage these values
+ *
+ * ```
+ * |------------------------------------------------------------>| total progress
+ * |---------------------------->| current progress
+ *                               |--->| inFlight progress
+ * ```
+ */
+declare class ProgressDetailPublisher {
+    protected readonly publishHandler: (jobPayload: any, workloads: ProgressWorkload) => Promise<any>;
+    jobPayload: Partial<{
+        status: 'in-progress' | 'initializing';
+        message: string;
+        /**
+         * Total Bar Length
+         */
+        totalProgress: number;
+        /**
+         * Finished Bar Length
+         */
+        currentProgress: number;
+        /**
+         * Almost Finished Bar Length
+         */
+        inFlightProgress: number;
+    }>;
+    protected workloads: ProgressWorkload;
+    /**
+     * Create an instance of ProgressDetailPublisher which uses Builder pattern.
+     * @param publishHandler
+     */
+    constructor(publishHandler: (jobPayload: any, workloads: ProgressWorkload) => Promise<any>);
+    setStatus(status: 'in-progress' | 'initializing'): this;
+    setMessage(message: string): this;
+    withWorkload(workloads: ProgressWorkload): this;
+    setManualProgress(current: number, total: number, inFlight: number): this;
+    setInFlightProgress(inFlight: number): this;
+    setTotalProgress(total: number): this;
+    setCurrentProgress(current: number): this;
+    publish(): Promise<void>;
+}
+
 declare const helpers: {
     /**
      * Compute given workloads change request to Firestore Update Query statement
@@ -129,7 +172,10 @@ declare class BackendFirebaseJob {
     readonly firestore: firestore.Firestore;
     readonly paths: PathProvider;
     readonly jobId: string;
-    readonly workloadMetaKey: string;
+    readonly options: {
+        workloadMetaKey: string;
+        useSubTaskProgress: boolean;
+    };
     /**
      * Create a brand new Backend Firebase Job object
      *
@@ -137,23 +183,68 @@ declare class BackendFirebaseJob {
      * @param pathProvider
      * @param storeId
      * @param jobId
-     * @param workloadMetaKey
+     * @param options - customize Job's behavior
      */
-    constructor(firestore: firestore.Firestore, paths: PathProvider, jobId: string, workloadMetaKey?: string);
+    constructor(firestore: firestore.Firestore, paths: PathProvider, jobId: string, options?: {
+        workloadMetaKey?: string;
+        useSubTaskProgress?: boolean;
+    });
     /**
+     * New API to report progress.
+     *
+     * Usage
+     *
+     * ```ts
+     * await job.makeProgress()
+     *  .setStatus('in-progress')
+     *  .setManualProgress(30, 100)
+     *  .setMessage('all good')
+     *  .publish()
+     * ```
+     *
+     * @returns a progress maker
+     */
+    makeProgress(): ProgressDetailPublisher;
+    /**
+     * !Backward compat API
+     *
+     * Update the progress report manually.
+     * If `options.useSubTaskProgress` is true, the system will discard currentProgress and totalProgress information.
+     *
      * @param detail
      * @param workloads update information about workloads.
      * @returns
      */
     publishProgress(detail: ProgressDetail, workloads?: ProgressWorkload): Promise<void>;
     /**
+     * Use this method to create the BackendFirebaseTask with specific taskId. This assumes that you have activate the task with
+     * either: `activateTaskBatch` or `activateTask` method.
+     *
+     * @param taskId
+     * @returns
+     */
+    getActiveTask<T extends FirebaseTaskContent>(taskId: string): BackendFirebaseTask<T>;
+    /**
+     * Same as activeTaskBatch but will save writeOperation charged with batch operations.
+     *
+     * @param items
+     * @param chunkSize
+     * @returns
+     */
+    activateTaskBatch<T extends FirebaseTaskContent>(items: {
+        label: string;
+        detail: T | null;
+        taskId?: string;
+    }[], chunkSize?: number): Promise<BackendFirebaseTask<T>[]>;
+    /**
      * Active Job's child task.
      *
      * @param label readable task description
      * @param detail detail of the tasks.
+     * @param taskId manually specific taskId instead of using `col.doc()`
      * @returns
      */
-    activateTask<T extends FirebaseTaskContent>(label: string, detail: T | null): Promise<BackendFirebaseTask<T>>;
+    activateTask<T extends FirebaseTaskContent>(label: string, detail: T | null, taskId?: string): Promise<BackendFirebaseTask<T>>;
     /**
      * Update the status of the task. And mark it as 'deactive';
      * Also reduce the Job's activeTaskCount by 1.
