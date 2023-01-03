@@ -443,7 +443,22 @@ var ProgressDetailPublisher = /*#__PURE__*/ function() {
         {
             key: "incCurrentProgress",
             value: function incCurrentProgress(delta) {
+                var withErrorMessages = arguments.length > 1 && arguments[1] !== void 0 ? arguments[1] : [];
                 this.jobPayload.currentProgress = import_firebase_admin.firestore.FieldValue.increment(delta);
+                if (withErrorMessages && withErrorMessages.length > 0) {
+                    if (withErrorMessages.length > delta) {
+                        console.warn("the error message should not exceeds the delta of incremented progress.");
+                    }
+                    return this.appendErrors(withErrorMessages);
+                }
+                return this;
+            }
+        },
+        {
+            key: "appendErrors",
+            value: function appendErrors(error) {
+                var _import_firebase_admin_firestore_FieldValue;
+                this.jobPayload.errors = (_import_firebase_admin_firestore_FieldValue = import_firebase_admin.firestore.FieldValue).arrayUnion.apply(_import_firebase_admin_firestore_FieldValue, _toConsumableArray(error));
                 return this;
             }
         },
@@ -451,6 +466,13 @@ var ProgressDetailPublisher = /*#__PURE__*/ function() {
             key: "setCurrentProgress",
             value: function setCurrentProgress(current) {
                 this.jobPayload.currentProgress = current;
+                return this;
+            }
+        },
+        {
+            key: "setLastTaskToken",
+            value: function setLastTaskToken(token) {
+                this.jobPayload.lastTaskToken = token;
                 return this;
             }
         },
@@ -643,10 +665,9 @@ var BackendFirebaseJob = /*#__PURE__*/ function() {
                 var workloads = arguments.length > 1 && arguments[1] !== void 0 ? arguments[1] : {};
                 var _this = this;
                 return _asyncToGenerator(function() {
-                    var status, _detail_currentProgress, currentProgress, _detail_totalProgress, totalProgress, _detail_message, message, jobId;
+                    var status, _detail_currentProgress, currentProgress, _detail_totalProgress, totalProgress, _detail_message, message;
                     return __generator(this, function(_state) {
                         status = detail.status, _detail_currentProgress = detail.currentProgress, currentProgress = _detail_currentProgress === void 0 ? 0 : _detail_currentProgress, _detail_totalProgress = detail.totalProgress, totalProgress = _detail_totalProgress === void 0 ? 100 : _detail_totalProgress, _detail_message = detail.message, message = _detail_message === void 0 ? "" : _detail_message;
-                        jobId = _this.jobId;
                         assertValidTaskStatus(status);
                         return [
                             2,
@@ -716,11 +737,11 @@ var BackendFirebaseJob = /*#__PURE__*/ function() {
             }
         },
         {
-            key: "getFinalizedSubTaskId",
-            value: function getFinalizedSubTaskId() {
+            key: "getFinalizedTaskToken",
+            value: function getFinalizedTaskToken() {
                 var _this = this;
                 return _asyncToGenerator(function() {
-                    var _rawData_options, doc, rawData;
+                    var doc, rawData;
                     return __generator(this, function(_state) {
                         switch(_state.label){
                             case 0:
@@ -737,10 +758,10 @@ var BackendFirebaseJob = /*#__PURE__*/ function() {
                                         null
                                     ];
                                 }
-                                if (((_rawData_options = rawData.options) === null || _rawData_options === void 0 ? void 0 : _rawData_options.useSubTaskProgress) === true && rawData.totalProgress === rawData.currentProgress && rawData.activeTaskCount === 0) {
+                                if (rawData.totalProgress === rawData.currentProgress && !rawData.activeTaskCount) {
                                     return [
                                         2,
-                                        rawData.lastTaskId || null
+                                        rawData.lastTaskToken || null
                                     ];
                                 }
                                 return [
@@ -929,7 +950,7 @@ var BackendFirebaseJob = /*#__PURE__*/ function() {
                                 }, aggregateKey, FieldValue.increment(1));
                                 if (_this.options.useSubTaskProgress) {
                                     updatePayload.currentProgress = FieldValue.increment(1);
-                                    updatePayload.lastTaskId = task.taskId;
+                                    updatePayload.lastTaskToken = task.taskId;
                                 }
                                 return [
                                     4,

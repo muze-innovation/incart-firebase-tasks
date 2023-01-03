@@ -81,12 +81,26 @@ var ProgressDetailPublisher = class {
     this.jobPayload.totalProgress = total;
     return this;
   }
-  incCurrentProgress(delta) {
+  incCurrentProgress(delta, withErrorMessages = []) {
     this.jobPayload.currentProgress = firestore.FieldValue.increment(delta);
+    if (withErrorMessages && withErrorMessages.length > 0) {
+      if (withErrorMessages.length > delta) {
+        console.warn("the error message should not exceeds the delta of incremented progress.");
+      }
+      return this.appendErrors(withErrorMessages);
+    }
+    return this;
+  }
+  appendErrors(error) {
+    this.jobPayload.errors = firestore.FieldValue.arrayUnion(...error);
     return this;
   }
   setCurrentProgress(current) {
     this.jobPayload.currentProgress = current;
+    return this;
+  }
+  setLastTaskToken(token) {
+    this.jobPayload.lastTaskToken = token;
     return this;
   }
   async publish() {
@@ -197,7 +211,6 @@ var BackendFirebaseJob = class {
       totalProgress = 100,
       message = ""
     } = detail;
-    const jobId = this.jobId;
     assertValidTaskStatus(status);
     return this.makeProgress().setManualProgress(currentProgress, totalProgress, 0).setStatus(status).setMessage(message).withWorkload(workloads).publish();
   }
@@ -223,14 +236,14 @@ var BackendFirebaseJob = class {
       "options.useSubTaskProgress": this.options.useSubTaskProgress
     });
   }
-  async getFinalizedSubTaskId() {
+  async getFinalizedTaskToken() {
     const doc = await this.firestore.doc(this.paths.activeJobsDocument(this.jobId)).get();
     const rawData = doc.data();
     if (!rawData) {
       return null;
     }
-    if (rawData.options?.useSubTaskProgress === true && rawData.totalProgress === rawData.currentProgress && rawData.activeTaskCount === 0) {
-      return rawData.lastTaskId || null;
+    if (rawData.totalProgress === rawData.currentProgress && !rawData.activeTaskCount) {
+      return rawData.lastTaskToken || null;
     }
     return null;
   }
@@ -319,7 +332,7 @@ var BackendFirebaseJob = class {
     };
     if (this.options.useSubTaskProgress) {
       updatePayload.currentProgress = FieldValue.increment(1);
-      updatePayload.lastTaskId = task.taskId;
+      updatePayload.lastTaskToken = task.taskId;
     }
     await this.firestore.doc(updateDocPath).update(updatePayload);
     return task.taskId;

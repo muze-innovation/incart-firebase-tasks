@@ -67,7 +67,7 @@ export class BackendFirebaseTask<T extends FirebaseTaskContent> {
    * @param taskId
    */
   constructor(
-    protected parentJob: BackendFirebaseJob,
+    public readonly parentJob: BackendFirebaseJob,
     protected absPath: string,
     public readonly taskId: string) {
   }
@@ -185,7 +185,6 @@ export class BackendFirebaseJob {
     const {
       status, currentProgress = 0, totalProgress = 100, message = '',
     } = detail
-    const jobId = this.jobId
     assertValidTaskStatus(status)
     return this.makeProgress()
       .setManualProgress(currentProgress, totalProgress, 0)
@@ -245,7 +244,7 @@ export class BackendFirebaseJob {
    * 
    * @returns null if Job's subtaskes are not yet finalized. If job's subtasks are finalized it will return the the last taskId instead.
    */
-  public async getFinalizedSubTaskId(): Promise<string | null> {
+  public async getFinalizedTaskToken(): Promise<string | null> {
     const doc = await this.firestore
       .doc(this.paths.activeJobsDocument(this.jobId))
       .get()
@@ -255,8 +254,8 @@ export class BackendFirebaseJob {
       return null
     }
     // Checks: using subTaskProgress flag, totalProgress == currentProgress && activeTaskCount == 0
-    if (rawData.options?.useSubTaskProgress === true && rawData.totalProgress === rawData.currentProgress && rawData.activeTaskCount === 0) {
-      return rawData.lastTaskId || null
+    if (rawData.totalProgress === rawData.currentProgress && !rawData.activeTaskCount) {
+      return rawData.lastTaskToken || null
     }
     return null
   }
@@ -385,7 +384,7 @@ export class BackendFirebaseJob {
     }
     if (this.options.useSubTaskProgress) {
       updatePayload.currentProgress = FieldValue.increment(1)
-      updatePayload.lastTaskId = task.taskId
+      updatePayload.lastTaskToken = task.taskId
     }
     await this.firestore.doc(updateDocPath).update(updatePayload)
     return task.taskId

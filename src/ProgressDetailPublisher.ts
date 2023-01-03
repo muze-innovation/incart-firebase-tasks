@@ -19,6 +19,18 @@ export class ProgressDetailPublisher {
     status: 'in-progress' | 'initializing'
     message: string
     /**
+     * Error published during the running process
+     */
+    errors: string[] | firestore.FieldValue
+    /**
+     * The last object that use to notify that the one whom responsible for completing the whole progress
+     * is a specific task/progress/sub-routine.
+     * 
+     * Set this by child process. And let each child process query this value back to check if it is the
+     * one whom acutally finalized the last bit.
+     */
+    lastTaskToken: string
+    /**
      * Total Bar Length
      */
     totalProgress: number | firestore.FieldValue
@@ -82,13 +94,37 @@ export class ProgressDetailPublisher {
     return this
   }
 
-  public incCurrentProgress(delta: number): this {
+  /**
+   * Tell the Firebase that some part of the work has been finished.
+   * Optionally, also provide the critical error message within some finished works.
+   *
+   * @param delta 
+   * @param withErrorMessages 
+   * @returns 
+   */
+  public incCurrentProgress(delta: number, withErrorMessages: string[] = []): this {
     this.jobPayload.currentProgress = firestore.FieldValue.increment(delta)
+    if (withErrorMessages && withErrorMessages.length > 0) {
+      if (withErrorMessages.length > delta) {
+        console.warn('the error message should not exceeds the delta of incremented progress.')
+      }
+      return this.appendErrors(withErrorMessages)
+    }
+    return this
+  }
+
+  public appendErrors(error: string[]): this {
+    this.jobPayload.errors = firestore.FieldValue.arrayUnion(...error)
     return this
   }
 
   public setCurrentProgress(current: number): this {
     this.jobPayload.currentProgress = current
+    return this
+  }
+
+  public setLastTaskToken(token: string): this {
+    this.jobPayload.lastTaskToken = token
     return this
   }
 

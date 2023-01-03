@@ -55,6 +55,57 @@ describe('Samples', () => {
         expect(data!.status).toEqual('finished-with-error')
       }
     })
+
+    it('can create a task without child task that track errors', async () => {
+      const job = await BackendFirebaseJob.createNew(
+        firebaseAdmin.firestore(),
+        inCartFirebaseTaskPaths('local', 'jested'),
+        'track-error-without-tasks',
+      )
+
+      await job.makeProgress()
+        .setStatus('in-progress')
+        .setTotalProgress(10)
+        .setCurrentProgress(0)
+        .publish()
+
+      const data = await getRawJobObject(job.jobId)
+      expect(data).toBeTruthy()
+      expect(data!.status).toEqual('in-progress')
+      expect(data!.totalProgress).toEqual(10)
+      expect(data!.currentProgress).toEqual(0)
+
+      const lastTaskToken = await job.getFinalizedTaskToken()
+      expect(lastTaskToken).toBeNull()
+
+      const childProcesses = [...new Array(10).keys()].map(async (k) => {
+        const prog = job.makeProgress()
+        const successFactor = Math.random()
+        const token = `SUBROUTINE_${k}`
+        if (successFactor < 0.3) {
+          await prog
+            .incCurrentProgress(1)
+            .setLastTaskToken(token)
+            .publish()
+        } else {
+          await prog
+            .incCurrentProgress(1, ['something went wrong'])
+            .setLastTaskToken(token)
+            .publish()
+        } 
+      })
+
+      await Promise.all(childProcesses)
+
+      const finalized = await getRawJobObject(job.jobId)
+      expect(finalized).toBeTruthy()
+      expect(finalized!.status).toEqual('in-progress')
+      expect(finalized!.totalProgress).toEqual(10)
+      expect(finalized!.currentProgress).toEqual(10)
+
+      const finalizedTaskToken = await job.getFinalizedTaskToken()
+      expect(finalizedTaskToken).toMatch(/^SUBROUTINE_\d+/)
+    })
   })
 
   describe('02 a Job with child task', () => {
@@ -163,12 +214,12 @@ describe('Samples', () => {
         }
       })
 
-      let subTaskId = await job.getFinalizedSubTaskId()
+      let subTaskId = await job.getFinalizedTaskToken()
       expect(subTaskId).toBeNull()
 
       await Promise.all(messageConsumers)
 
-      subTaskId = await job.getFinalizedSubTaskId()
+      subTaskId = await job.getFinalizedTaskToken()
       expect(subTaskId).toBeTruthy()
       expect(subTaskId).toMatch(/my-child-task-label-batch-\d{1,2}-id/)
 

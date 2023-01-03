@@ -90,6 +90,18 @@ declare class ProgressDetailPublisher {
         status: 'in-progress' | 'initializing';
         message: string;
         /**
+         * Error published during the running process
+         */
+        errors: string[] | firestore.FieldValue;
+        /**
+         * The last object that use to notify that the one whom responsible for completing the whole progress
+         * is a specific task/progress/sub-routine.
+         *
+         * Set this by child process. And let each child process query this value back to check if it is the
+         * one whom acutally finalized the last bit.
+         */
+        lastTaskToken: string;
+        /**
          * Total Bar Length
          */
         totalProgress: number | firestore.FieldValue;
@@ -121,8 +133,18 @@ declare class ProgressDetailPublisher {
     setManualProgress(current: number, total: number, inFlight?: number): this;
     setInFlightProgress(inFlight: number): this;
     setTotalProgress(total: number): this;
-    incCurrentProgress(delta: number): this;
+    /**
+     * Tell the Firebase that some part of the work has been finished.
+     * Optionally, also provide the critical error message within some finished works.
+     *
+     * @param delta
+     * @param withErrorMessages
+     * @returns
+     */
+    incCurrentProgress(delta: number, withErrorMessages?: string[]): this;
+    appendErrors(error: string[]): this;
     setCurrentProgress(current: number): this;
+    setLastTaskToken(token: string): this;
     publish(): Promise<void>;
 }
 
@@ -146,7 +168,7 @@ declare const helpers: {
     toFirestoreWorkloads(workloads: ProgressWorkload): {};
 };
 declare class BackendFirebaseTask<T extends FirebaseTaskContent> {
-    protected parentJob: BackendFirebaseJob;
+    readonly parentJob: BackendFirebaseJob;
     protected absPath: string;
     readonly taskId: string;
     /**
@@ -249,7 +271,7 @@ declare class BackendFirebaseJob {
      *
      * @returns null if Job's subtaskes are not yet finalized. If job's subtasks are finalized it will return the the last taskId instead.
      */
-    getFinalizedSubTaskId(): Promise<string | null>;
+    getFinalizedTaskToken(): Promise<string | null>;
     /**
      * Same as activeTaskBatch but will save writeOperation charges with batch operation.
      *
