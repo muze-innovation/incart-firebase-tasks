@@ -111,8 +111,9 @@ export class BackendFirebaseTask<T extends FirebaseTaskContent> {
 }
 
 export class BackendFirebaseJob {
-  // Default options
-  public readonly options: { workloadMetaKey: string, useSubTaskProgress: boolean }
+
+  // Internal states (which will be maintained by BackendFirebaseJob object)
+  protected options: { workloadMetaKey: string, useSubTaskProgress: boolean }
 
   /**
    * Create a brand new Backend Firebase Job object
@@ -153,18 +154,20 @@ export class BackendFirebaseJob {
     const updateDocPath = this.paths.activeJobsDocument(this.jobId)
     const docRef = this.firestore.doc(updateDocPath)
     return new ProgressDetailPublisher(async (jobPayload, workloads) => {
-      await docRef.update(jobPayload)
+      const batchOp = this.firestore.batch()
+      batchOp.update(docRef, jobPayload)
       const computedWorkloadChanges = helpers.toFirestoreWorkloads(workloads)
       if (!isEmpty(computedWorkloadChanges)) {
         const workloadsPath = this.paths.activeJobsMetaDocument(this.jobId, this.options.workloadMetaKey)
         console.log('Updating job.workloads on', workloadsPath, computedWorkloadChanges)
-        await this.firestore.doc(workloadsPath).set({
+        batchOp.set(this.firestore.doc(workloadsPath), {
           ...computedWorkloadChanges,
           updatedAt: FieldValue.serverTimestamp(),
         }, {
           merge: true,
         })
       }
+      await batchOp.commit()
     })
   }
 
@@ -209,7 +212,34 @@ export class BackendFirebaseJob {
   }
 
   /**
-   * Same as activeTaskBatch but will save writeOperation charged with batch operations.
+   * Enable subTask as progress.
+   * 
+   * Once enable deactiveTask will increment current progress.
+   * 
+   * @param enable 
+   */
+  public async enableSubTaskProgress(numberOfSubTasks: number): Promise<void> {
+    this.options.useSubTaskProgress = true
+    await this.firestore
+      .doc(this.paths.activeJobsDocument(this.jobId))
+      .update({
+        'options.useSubTaskProgress': this.options.useSubTaskProgress,
+        totalProgress: numberOfSubTasks,
+        currentProgress: 0,
+      })
+  }
+
+  public async disableSubTaskProgress(): Promise<void> {
+    this.options.useSubTaskProgress = false
+    await this.firestore
+      .doc(this.paths.activeJobsDocument(this.jobId))
+      .update({
+        'options.useSubTaskProgress': this.options.useSubTaskProgress,
+      })
+  }
+
+  /**
+   * Same as activeTaskBatch but will save writeOperation charges with batch operation.
    * 
    * @param items 
    * @param chunkSize 
@@ -227,7 +257,7 @@ export class BackendFirebaseJob {
       .doc(this.paths.activeJobsDocument(this.jobId))
     const result: BackendFirebaseTask<T>[] = []
 
-    const chunked = chunk(items, 100)
+    const chunked = chunk(items, chunkSize)
     for(const batchOfItems of chunked) {
       // For each chunk
       const batchSize = batchOfItems.length
@@ -321,10 +351,14 @@ export class BackendFirebaseJob {
     const aggregateKey = reason === 'failed' ? 'failedTaskCount' : 'successTaskCount'
     await this.firestore.doc(taskDocPath).update(payload)
     const updateDocPath = this.paths.activeJobsDocument(this.jobId)
-    await this.firestore.doc(updateDocPath).update({
+    const updatePayload = {
       activeTaskCount: FieldValue.increment(-1),
       [aggregateKey]: FieldValue.increment(1),
-    })
+    }
+    if (this.options.useSubTaskProgress) {
+      updatePayload.currentProgress = FieldValue.increment(1)
+    }
+    await this.firestore.doc(updateDocPath).update(updatePayload)
   }
 
   /**
@@ -408,7 +442,7 @@ export class BackendFirebaseJob {
    * 
    * @returns
    */
-  async isExist(): Promise<boolean> {
+  public async isExist(): Promise<boolean> {
     const docPath = this.paths.activeJobsDocument(this.jobId)
     const docRef = this.firestore.doc(docPath)
     const snapshot = await docRef.get()
@@ -427,6 +461,7 @@ export class BackendFirebaseJob {
       fs,
       paths,
       docRef.id,
+      {},
     )
   }
 
@@ -437,15 +472,19 @@ export class BackendFirebaseJob {
    * @throws InvalidJobId error when given jobId is not exists.
    */
   public static async loadJob(fs: firestore.Firestore, paths:PathProvider, jobId: string): Promise<BackendFirebaseJob> {
+    const docPath = paths.activeJobsDocument(jobId)
+    const docRef = fs.doc(docPath)
+    const snapshot = await docRef.get()
+    if (!snapshot) {
+      throw new Error(`"jobId" of value ${jobId} is unknown to given Firestore.`)
+    }
+    const data = snapshot.data()
     const job = new BackendFirebaseJob(
       fs,
       paths,
       jobId,
+      data?.options
     )
-    const exists = await job.isExist()
-    if (!exists) {
-      throw new Error(`"jobId" of value ${jobId} is unknown to given Firestore.`)
-    } 
     return job
   }
 }

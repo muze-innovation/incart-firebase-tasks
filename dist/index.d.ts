@@ -78,9 +78,10 @@ interface FirebaseTaskContent {
  * ProgressDetailPublisher will manage these values
  *
  * ```
- * |------------------------------------------------------------>| total progress
- * |---------------------------->| current progress
- *                               |--->| inFlight progress
+ * |------------------------------------------------------------>| total
+ * |---------------------------->|                                 current
+ *                               |--->|                            inFlight
+ * |-->|                                                           error
  * ```
  */
 declare class ProgressDetailPublisher {
@@ -91,15 +92,22 @@ declare class ProgressDetailPublisher {
         /**
          * Total Bar Length
          */
-        totalProgress: number;
+        totalProgress: number | firestore.FieldValue;
         /**
          * Finished Bar Length
          */
-        currentProgress: number;
+        currentProgress: number | firestore.FieldValue;
         /**
-         * Almost Finished Bar Length
+         * (For Future Release)
+         * number of task that the system currently working on.
          */
-        inFlightProgress: number;
+        inFlightProgress: number | firestore.FieldValue;
+        /**
+         * (For Future Release)
+         * number of tasks that the system currently worked on but failed. This number is included in current bar as well
+         * which means it can be discarded by UI as total/current is already suffice to display the total progress.
+         */
+        errorProgress: number;
     }>;
     protected workloads: ProgressWorkload;
     /**
@@ -110,9 +118,10 @@ declare class ProgressDetailPublisher {
     setStatus(status: 'in-progress' | 'initializing'): this;
     setMessage(message: string): this;
     withWorkload(workloads: ProgressWorkload): this;
-    setManualProgress(current: number, total: number, inFlight: number): this;
+    setManualProgress(current: number, total: number, inFlight?: number): this;
     setInFlightProgress(inFlight: number): this;
     setTotalProgress(total: number): this;
+    incCurrentProgress(delta: number): this;
     setCurrentProgress(current: number): this;
     publish(): Promise<void>;
 }
@@ -172,7 +181,7 @@ declare class BackendFirebaseJob {
     readonly firestore: firestore.Firestore;
     readonly paths: PathProvider;
     readonly jobId: string;
-    readonly options: {
+    protected options: {
         workloadMetaKey: string;
         useSubTaskProgress: boolean;
     };
@@ -225,7 +234,16 @@ declare class BackendFirebaseJob {
      */
     getActiveTask<T extends FirebaseTaskContent>(taskId: string): BackendFirebaseTask<T>;
     /**
-     * Same as activeTaskBatch but will save writeOperation charged with batch operations.
+     * Enable subTask as progress.
+     *
+     * Once enable deactiveTask will increment current progress.
+     *
+     * @param enable
+     */
+    enableSubTaskProgress(numberOfSubTasks: number): Promise<void>;
+    disableSubTaskProgress(): Promise<void>;
+    /**
+     * Same as activeTaskBatch but will save writeOperation charges with batch operation.
      *
      * @param items
      * @param chunkSize

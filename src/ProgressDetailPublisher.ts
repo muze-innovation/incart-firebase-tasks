@@ -5,9 +5,10 @@ import { ProgressWorkload } from "./models"
  * ProgressDetailPublisher will manage these values
  * 
  * ```
- * |------------------------------------------------------------>| total progress
- * |---------------------------->| current progress
- *                               |--->| inFlight progress
+ * |------------------------------------------------------------>| total
+ * |---------------------------->|                                 current
+ *                               |--->|                            inFlight
+ * |-->|                                                           error
  * ```
  */
 
@@ -20,15 +21,22 @@ export class ProgressDetailPublisher {
     /**
      * Total Bar Length
      */
-    totalProgress: number
+    totalProgress: number | firestore.FieldValue
     /**
      * Finished Bar Length
      */
-    currentProgress: number
+    currentProgress: number | firestore.FieldValue
     /**
-     * Almost Finished Bar Length
+     * (For Future Release)
+     * number of task that the system currently working on.
      */
-    inFlightProgress: number
+    inFlightProgress: number | firestore.FieldValue
+    /**
+     * (For Future Release)
+     * number of tasks that the system currently worked on but failed. This number is included in current bar as well
+     * which means it can be discarded by UI as total/current is already suffice to display the total progress.
+     */
+    errorProgress: number
   }> = {}
 
   protected workloads: ProgressWorkload = {}
@@ -57,7 +65,7 @@ export class ProgressDetailPublisher {
     return this
   }
 
-  public setManualProgress(current: number, total: number, inFlight: number): this {
+  public setManualProgress(current: number, total: number, inFlight: number = 0): this {
     this.jobPayload.totalProgress = total
     this.jobPayload.currentProgress = current
     this.jobPayload.inFlightProgress = inFlight
@@ -71,6 +79,11 @@ export class ProgressDetailPublisher {
 
   public setTotalProgress(total: number): this {
     this.jobPayload.totalProgress = total
+    return this
+  }
+
+  public incCurrentProgress(delta: number): this {
+    this.jobPayload.currentProgress = firestore.FieldValue.increment(delta)
     return this
   }
 

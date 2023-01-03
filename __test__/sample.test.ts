@@ -4,6 +4,16 @@ import { BackendFirebaseJob, inCartFirebaseTaskPaths } from '../src'
 
 firebaseAdmin.initializeApp()
 
+const paths = inCartFirebaseTaskPaths('local', 'jested')
+
+const getRawJobObject = async (jobId: string): Promise<FirebaseFirestore.DocumentData | null> => {
+  const db = firebaseAdmin.firestore()
+  const snpashot = await db
+    .doc(paths.activeJobsDocument(jobId))
+    .get()
+  return snpashot.data() || null
+}
+
 describe('Samples', () => {
   describe('01_simple', () => {
     it.each`
@@ -30,11 +40,19 @@ describe('Samples', () => {
           status: 'finished',
           message: 'all good',
         })
+
+        const data = await getRawJobObject(job.jobId)
+        expect(data).toBeTruthy()
+        expect(data!.status).toEqual('finished')
       } else {
         await job.publishDone({
           status: 'finished-with-error',
           errorMessage: 'There is something wrong with the system :('
         })
+
+        const data = await getRawJobObject(job.jobId)
+        expect(data).toBeTruthy()
+        expect(data!.status).toEqual('finished-with-error')
       }
     })
   })
@@ -58,6 +76,10 @@ describe('Samples', () => {
       await job.publishDone({
         status: 'finished',
       })
+
+      const data = await getRawJobObject(job.jobId)
+      expect(data).toBeTruthy()
+      expect(data!.status).toEqual('finished')
     })
 
     it('can create a job with 10 child-task', async () => {
@@ -66,8 +88,16 @@ describe('Samples', () => {
         inCartFirebaseTaskPaths('local', 'jested'),
         'fake-job-slug-with-task',
       )
+      const totalTasks = 10
 
-      const oneToN = [...Array(10).keys()]
+      await job.enableSubTaskProgress(totalTasks)
+
+      const beforeStart = await getRawJobObject(job.jobId)
+      expect(beforeStart).toBeTruthy()
+      expect(beforeStart!.currentProgress).toEqual(0)
+      expect(beforeStart!.totalProgress).toEqual(totalTasks)
+
+      const oneToN = [...Array(totalTasks).keys()]
       const tasks = oneToN.map(async (n) => {
         const task = await job.activateTask(`my-child-task-label-${n}`, null)
 
@@ -86,19 +116,32 @@ describe('Samples', () => {
 
       await Promise.all(tasks)
 
+      const data = await getRawJobObject(job.jobId)
+      expect(data).toBeTruthy()
+      expect(data!.currentProgress).toEqual(totalTasks)
+      expect(data!.totalProgress).toEqual(totalTasks)
+
       await job.publishDone({
         status: 'finished',
       })
     })
 
-    it('can create a job with 10 child-task using batch operation', async () => {
+    it('can create a job with 35 child-task using batch operation', async () => {
       const job = await BackendFirebaseJob.createNew(
         firebaseAdmin.firestore(),
         inCartFirebaseTaskPaths('local', 'jested'),
         'fake-job-slug-with-task-using-batch-op',
       )
+      const totalTasks = 35
 
-      const oneToN = [...Array(10).keys()]
+      await job.enableSubTaskProgress(totalTasks)
+
+      const beforeStart = await getRawJobObject(job.jobId)
+      expect(beforeStart).toBeTruthy()
+      expect(beforeStart!.currentProgress).toEqual(0)
+      expect(beforeStart!.totalProgress).toEqual(totalTasks)
+
+      const oneToN = [...Array(totalTasks).keys()]
       const tasks = await job.activateTaskBatch(oneToN.map((n) => ({
         label: `my-child-task-label-batch-${n}`,
         detail: null,
@@ -120,6 +163,11 @@ describe('Samples', () => {
       })
 
       await Promise.all(messageConsumers)
+
+      const data = await getRawJobObject(job.jobId)
+      expect(data).toBeTruthy()
+      expect(data!.currentProgress).toEqual(totalTasks)
+      expect(data!.totalProgress).toEqual(totalTasks)
 
       await job.publishDone({
         status: 'finished',
