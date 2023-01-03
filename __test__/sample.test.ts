@@ -163,13 +163,21 @@ describe('Samples', () => {
         }
       })
 
+      let subTaskId = await job.getFinalizedSubTaskId()
+      expect(subTaskId).toBeNull()
+
       await Promise.all(messageConsumers)
+
+      subTaskId = await job.getFinalizedSubTaskId()
+      expect(subTaskId).toBeTruthy()
+      expect(subTaskId).toMatch(/my-child-task-label-batch-\d{1,2}-id/)
 
       const data = await getRawJobObject(job.jobId)
       expect(data).toBeTruthy()
       expect(data!.currentProgress).toEqual(totalTasks)
       expect(data!.totalProgress).toEqual(totalTasks)
       expect(data!.inFlightProgress).toEqual(0)
+
 
       await job.publishDone({
         status: 'finished',

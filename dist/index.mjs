@@ -223,6 +223,17 @@ var BackendFirebaseJob = class {
       "options.useSubTaskProgress": this.options.useSubTaskProgress
     });
   }
+  async getFinalizedSubTaskId() {
+    const doc = await this.firestore.doc(this.paths.activeJobsDocument(this.jobId)).get();
+    const rawData = doc.data();
+    if (!rawData) {
+      return null;
+    }
+    if (rawData.options?.useSubTaskProgress === true && rawData.totalProgress === rawData.currentProgress && rawData.activeTaskCount === 0) {
+      return rawData.lastTaskId || null;
+    }
+    return null;
+  }
   async activateTaskBatch(items, chunkSize = 200) {
     if (chunkSize > 500 - 1) {
       throw new Error("Maximum batch operation exceeds.");
@@ -298,8 +309,8 @@ var BackendFirebaseJob = class {
     if (error) {
       payload.error = error;
     }
-    const aggregateKey = reason === "failed" ? "failedTaskCount" : "successTaskCount";
     await this.firestore.doc(taskDocPath).update(payload);
+    const aggregateKey = reason === "failed" ? "failedTaskCount" : "successTaskCount";
     const updateDocPath = this.paths.activeJobsDocument(this.jobId);
     const updatePayload = {
       activeTaskCount: FieldValue.increment(-1),
@@ -308,8 +319,10 @@ var BackendFirebaseJob = class {
     };
     if (this.options.useSubTaskProgress) {
       updatePayload.currentProgress = FieldValue.increment(1);
+      updatePayload.lastTaskId = task.taskId;
     }
     await this.firestore.doc(updateDocPath).update(updatePayload);
+    return task.taskId;
   }
   async getActiveTasksCount() {
     const jobId = this.jobId;

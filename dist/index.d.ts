@@ -169,13 +169,13 @@ declare class BackendFirebaseTask<T extends FirebaseTaskContent> {
     /**
      * terminate itself as 'success'
      */
-    publishSuccess(): Promise<void>;
+    publishSuccess(): Promise<string>;
     /**
      * terminate itself as 'failed' with specific reason.
      *
      * @param failureReason
      */
-    publishFailed(failureReason: string): Promise<void>;
+    publishFailed(failureReason: string): Promise<string>;
 }
 declare class BackendFirebaseJob {
     readonly firestore: firestore.Firestore;
@@ -243,6 +243,14 @@ declare class BackendFirebaseJob {
     enableSubTaskProgress(numberOfSubTasks: number): Promise<void>;
     disableSubTaskProgress(): Promise<void>;
     /**
+     * Probe for subtask statuses if the given taskId is the actual subTask that turn complete the service.
+     *
+     * Useful when system need to know if the service is responsible for last subTask.
+     *
+     * @returns null if Job's subtaskes are not yet finalized. If job's subtasks are finalized it will return the the last taskId instead.
+     */
+    getFinalizedSubTaskId(): Promise<string | null>;
+    /**
      * Same as activeTaskBatch but will save writeOperation charges with batch operation.
      *
      * @param items
@@ -272,9 +280,9 @@ declare class BackendFirebaseJob {
      * @param task
      * @param reason
      * @param error
-     * @returns
+     * @returns the latest task that finished.
      */
-    deactivateTask(task: BackendFirebaseTask<any>, reason: 'failed' | 'success', error?: string): Promise<void>;
+    deactivateTask(task: BackendFirebaseTask<any>, reason: 'failed' | 'success', error?: string): Promise<string>;
     /**
      * Query number of active tasks at the given moment
      *

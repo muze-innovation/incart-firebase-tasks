@@ -96,7 +96,7 @@ export class BackendFirebaseTask<T extends FirebaseTaskContent> {
   /**
    * terminate itself as 'success'
    */
-  async publishSuccess(): Promise<void> {
+  async publishSuccess(): Promise<string> {
     return this.parentJob.deactivateTask(this, 'success')
   }
 
@@ -105,7 +105,7 @@ export class BackendFirebaseTask<T extends FirebaseTaskContent> {
    * 
    * @param failureReason
    */
-  async publishFailed(failureReason: string): Promise<void> {
+  async publishFailed(failureReason: string): Promise<string> {
     return this.parentJob.deactivateTask(this, 'failed', failureReason)
   }
 }
@@ -239,6 +239,29 @@ export class BackendFirebaseJob {
   }
 
   /**
+   * Probe for subtask statuses if the given taskId is the actual subTask that turn complete the service.
+   * 
+   * Useful when system need to know if the service is responsible for last subTask.
+   * 
+   * @returns null if Job's subtaskes are not yet finalized. If job's subtasks are finalized it will return the the last taskId instead.
+   */
+  public async getFinalizedSubTaskId(): Promise<string | null> {
+    const doc = await this.firestore
+      .doc(this.paths.activeJobsDocument(this.jobId))
+      .get()
+    // Condition to check
+    const rawData = doc.data()
+    if (!rawData) {
+      return null
+    }
+    // Checks: using subTaskProgress flag, totalProgress == currentProgress && activeTaskCount == 0
+    if (rawData.options?.useSubTaskProgress === true && rawData.totalProgress === rawData.currentProgress && rawData.activeTaskCount === 0) {
+      return rawData.lastTaskId || null
+    }
+    return null
+  }
+
+  /**
    * Same as activeTaskBatch but will save writeOperation charges with batch operation.
    * 
    * @param items 
@@ -337,10 +360,11 @@ export class BackendFirebaseJob {
    * @param task
    * @param reason
    * @param error
-   * @returns
+   * @returns the latest task that finished.
    */
-  async deactivateTask(task: BackendFirebaseTask<any>, reason: 'failed' | 'success', error?: string) {
+  async deactivateTask(task: BackendFirebaseTask<any>, reason: 'failed' | 'success', error?: string): Promise<string> {
     console.log('DEACTIVATE TASK', task.taskId, reason, error)
+    // Update task
     const taskDocPath = this.paths.activeJobSubTaskDocument(this.jobId, task.taskId)
     const payload: any = {
       reason,
@@ -350,18 +374,21 @@ export class BackendFirebaseJob {
     if (error) {
       payload.error = error
     }
-    const aggregateKey = reason === 'failed' ? 'failedTaskCount' : 'successTaskCount'
     await this.firestore.doc(taskDocPath).update(payload)
+    // Update job
+    const aggregateKey = reason === 'failed' ? 'failedTaskCount' : 'successTaskCount'
     const updateDocPath = this.paths.activeJobsDocument(this.jobId)
-    const updatePayload = {
+    const updatePayload: Record<string, string | firestore.FieldValue> = {
       activeTaskCount: FieldValue.increment(-1),
       inFlightProgress: FieldValue.increment(-1),
       [aggregateKey]: FieldValue.increment(1),
     }
     if (this.options.useSubTaskProgress) {
       updatePayload.currentProgress = FieldValue.increment(1)
+      updatePayload.lastTaskId = task.taskId
     }
     await this.firestore.doc(updateDocPath).update(updatePayload)
+    return task.taskId
   }
 
   /**

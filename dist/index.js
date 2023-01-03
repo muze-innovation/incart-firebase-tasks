@@ -716,6 +716,43 @@ var BackendFirebaseJob = /*#__PURE__*/ function() {
             }
         },
         {
+            key: "getFinalizedSubTaskId",
+            value: function getFinalizedSubTaskId() {
+                var _this = this;
+                return _asyncToGenerator(function() {
+                    var _rawData_options, doc, rawData;
+                    return __generator(this, function(_state) {
+                        switch(_state.label){
+                            case 0:
+                                return [
+                                    4,
+                                    _this.firestore.doc(_this.paths.activeJobsDocument(_this.jobId)).get()
+                                ];
+                            case 1:
+                                doc = _state.sent();
+                                rawData = doc.data();
+                                if (!rawData) {
+                                    return [
+                                        2,
+                                        null
+                                    ];
+                                }
+                                if (((_rawData_options = rawData.options) === null || _rawData_options === void 0 ? void 0 : _rawData_options.useSubTaskProgress) === true && rawData.totalProgress === rawData.currentProgress && rawData.activeTaskCount === 0) {
+                                    return [
+                                        2,
+                                        rawData.lastTaskId || null
+                                    ];
+                                }
+                                return [
+                                    2,
+                                    null
+                                ];
+                        }
+                    });
+                })();
+            }
+        },
+        {
             key: "activateTaskBatch",
             value: function activateTaskBatch(items) {
                 var chunkSize = arguments.length > 1 && arguments[1] !== void 0 ? arguments[1] : 200;
@@ -878,13 +915,13 @@ var BackendFirebaseJob = /*#__PURE__*/ function() {
                                 if (error) {
                                     payload.error = error;
                                 }
-                                aggregateKey = reason === "failed" ? "failedTaskCount" : "successTaskCount";
                                 return [
                                     4,
                                     _this.firestore.doc(taskDocPath).update(payload)
                                 ];
                             case 1:
                                 _state.sent();
+                                aggregateKey = reason === "failed" ? "failedTaskCount" : "successTaskCount";
                                 updateDocPath = _this.paths.activeJobsDocument(_this.jobId);
                                 updatePayload = _defineProperty({
                                     activeTaskCount: FieldValue.increment(-1),
@@ -892,6 +929,7 @@ var BackendFirebaseJob = /*#__PURE__*/ function() {
                                 }, aggregateKey, FieldValue.increment(1));
                                 if (_this.options.useSubTaskProgress) {
                                     updatePayload.currentProgress = FieldValue.increment(1);
+                                    updatePayload.lastTaskId = task.taskId;
                                 }
                                 return [
                                     4,
@@ -900,7 +938,8 @@ var BackendFirebaseJob = /*#__PURE__*/ function() {
                             case 2:
                                 _state.sent();
                                 return [
-                                    2
+                                    2,
+                                    task.taskId
                                 ];
                         }
                     });
