@@ -120,6 +120,7 @@ describe('Samples', () => {
       expect(data).toBeTruthy()
       expect(data!.currentProgress).toEqual(totalTasks)
       expect(data!.totalProgress).toEqual(totalTasks)
+      expect(data!.inFlightProgress).toEqual(0)
 
       await job.publishDone({
         status: 'finished',
@@ -168,6 +169,7 @@ describe('Samples', () => {
       expect(data).toBeTruthy()
       expect(data!.currentProgress).toEqual(totalTasks)
       expect(data!.totalProgress).toEqual(totalTasks)
+      expect(data!.inFlightProgress).toEqual(0)
 
       await job.publishDone({
         status: 'finished',

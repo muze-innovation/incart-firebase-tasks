@@ -278,6 +278,7 @@ export class BackendFirebaseJob {
       // (2) update activeTaskCount
       batchOp.update(activeJobDocRef, {
         activeTaskCount: FieldValue.increment(batchSize),
+        inFlightProgress: FieldValue.increment(batchSize),
       })
       await batchOp.commit()
       for (let i=0;i<batchSize;i++) {
@@ -322,6 +323,7 @@ export class BackendFirebaseJob {
     const updateDocPath = this.paths.activeJobsDocument(this.jobId)
     this.firestore.doc(updateDocPath).update({
       activeTaskCount: FieldValue.increment(1),
+      inFlightProgress: FieldValue.increment(1),
     })
     return o
   }
@@ -353,6 +355,7 @@ export class BackendFirebaseJob {
     const updateDocPath = this.paths.activeJobsDocument(this.jobId)
     const updatePayload = {
       activeTaskCount: FieldValue.increment(-1),
+      inFlightProgress: FieldValue.increment(-1),
       [aggregateKey]: FieldValue.increment(1),
     }
     if (this.options.useSubTaskProgress) {

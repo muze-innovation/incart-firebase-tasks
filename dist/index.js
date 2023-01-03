@@ -764,7 +764,8 @@ var BackendFirebaseJob = /*#__PURE__*/ function() {
                                     resultOp[i] = docRef;
                                 }
                                 batchOp.update(activeJobDocRef, {
-                                    activeTaskCount: FieldValue.increment(batchSize)
+                                    activeTaskCount: FieldValue.increment(batchSize),
+                                    inFlightProgress: FieldValue.increment(batchSize)
                                 });
                                 return [
                                     4,
@@ -846,7 +847,8 @@ var BackendFirebaseJob = /*#__PURE__*/ function() {
                                 console.log("ACTIVATE TASK", docRef.id);
                                 updateDocPath = _this.paths.activeJobsDocument(_this.jobId);
                                 _this.firestore.doc(updateDocPath).update({
-                                    activeTaskCount: FieldValue.increment(1)
+                                    activeTaskCount: FieldValue.increment(1),
+                                    inFlightProgress: FieldValue.increment(1)
                                 });
                                 return [
                                     2,
@@ -885,7 +887,8 @@ var BackendFirebaseJob = /*#__PURE__*/ function() {
                                 _state.sent();
                                 updateDocPath = _this.paths.activeJobsDocument(_this.jobId);
                                 updatePayload = _defineProperty({
-                                    activeTaskCount: FieldValue.increment(-1)
+                                    activeTaskCount: FieldValue.increment(-1),
+                                    inFlightProgress: FieldValue.increment(-1)
                                 }, aggregateKey, FieldValue.increment(1));
                                 if (_this.options.useSubTaskProgress) {
                                     updatePayload.currentProgress = FieldValue.increment(1);
